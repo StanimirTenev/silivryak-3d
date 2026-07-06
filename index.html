@@ -10,11 +10,34 @@
     --line:rgba(120,190,150,.28); --accent:#7ac74f; --ink:#e8f3ea;
     --muted:#9fc4ab;
     --safe-b:env(safe-area-inset-bottom,0px);
+    --app-h:100dvh;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0;height:100%;overflow:hidden;background:#050d09;overscroll-behavior:none;
-    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--ink);}
-  #stage{position:fixed;inset:0;display:block;cursor:grab;touch-action:none;}
+  html,body{
+    margin:0;
+    width:100%;
+    height:var(--app-h);
+    min-height:100dvh;
+    overflow:hidden;
+    background:#050d09;
+    overscroll-behavior:none;
+    touch-action:none;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:var(--ink);
+  }
+  body{position:fixed;inset:0;}
+  #stage{
+    position:fixed;
+    left:0;
+    top:0;
+    width:100vw;
+    height:var(--app-h);
+    display:block;
+    cursor:grab;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
   #stage.grab{cursor:grabbing;}
 
   .panel{position:fixed;background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
@@ -380,6 +403,7 @@ const ORGANS = [
 
   // ---- camera / view state ----
   let yaw=0.5, pitch=-0.25, dist=1150, targetDist=1150;
+  let panX=0, panY=0;
   let autoRotate=true;
   const focal=900;
 
@@ -393,21 +417,47 @@ const ORGANS = [
   let dragging=false, lastX=0, lastY=0, moved=0;
   let smallScreen=false, firstResize=true;
 
+  function getViewportSize(){
+    const vv = window.visualViewport;
+    return {
+      width: Math.round(vv?.width || window.innerWidth || document.documentElement.clientWidth || cv.clientWidth || 360),
+      height: Math.round(vv?.height || window.innerHeight || document.documentElement.clientHeight || cv.clientHeight || 640)
+    };
+  }
+
   function resize(){
-    W = window.innerWidth || document.documentElement.clientWidth || cv.clientWidth || 360;
-    H = window.innerHeight || document.documentElement.clientHeight || cv.clientHeight || 640;
-    cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+    const size = getViewportSize();
+
+    W = size.width;
+    H = size.height;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+    document.documentElement.style.setProperty('--app-h', `${H}px`);
+
+    cv.style.width = `${W}px`;
+    cv.style.height = `${H}px`;
+
+    cv.width = Math.round(W * DPR);
+    cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+
     smallScreen = W<=820;
-    // only lock the initial fit once we truly have real (non-zero) dimensions
+
+    // На телефон камерата е по-назад, за да не се вижда само отрязана част.
     if(firstResize && W>10){
-      targetDist = dist = W<520 ? 1650 : (W<820 ? 1380 : 1150);
+      targetDist = dist = W<520 ? 2150 : (W<820 ? 1750 : 1150);
+      panX = 0;
+      panY = W<520 ? 24 : 0;
       firstResize=false;
     }
   }
-  window.addEventListener('resize',resize);
-  window.addEventListener('orientationchange',()=>setTimeout(resize,150));
-  window.addEventListener('load',()=>setTimeout(resize,60));   // some webviews report 0 width until load
+  window.addEventListener('resize',resize,{passive:true});
+  window.addEventListener('orientationchange',()=>setTimeout(resize,250),{passive:true});
+  window.visualViewport?.addEventListener('resize',resize,{passive:true});
+  window.visualViewport?.addEventListener('scroll',resize,{passive:true});
+  window.addEventListener('load',()=>setTimeout(resize,60),{passive:true});   // some webviews report 0 width until load
   resize();
+  setTimeout(resize,300);
 
   // ================= FORCE SIMULATION =================
   function simulate(alpha){
@@ -462,7 +512,7 @@ const ORGANS = [
     let z2=y*sp + z*cp;
     const zc=z2+dist;                 // camera depth
     const s=focal/Math.max(zc,1);
-    return { sx:W/2 + x*s, sy:H/2 + y2*s, scale:s, depth:zc };
+    return { sx:W/2 + panX + x*s, sy:H/2 + panY + y2*s, scale:s, depth:zc };
   }
 
   // ================= BODY (human figure + organs) =================
@@ -699,35 +749,53 @@ const ORGANS = [
 
   // ================= EVENTS (mouse + touch, unified via pointers) =================
   const pointers=new Map();   // pointerId -> {x,y}
-  let maxPointers=0, pinchPrev=0;
-  const MINDIST=420, MAXDIST=2600;
+  let maxPointers=0, pinchPrev=0, pinchPrevCx=0, pinchPrevCy=0;
+  const MINDIST=420, MAXDIST=3200;
 
   function twoDist(){
     const a=[...pointers.values()];
     return Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
   }
+  function twoCenter(){
+    const a=[...pointers.values()];
+    return { x:(a[0].x+a[1].x)/2, y:(a[0].y+a[1].y)/2 };
+  }
 
   cv.addEventListener('pointerdown',e=>{
+    e.preventDefault();
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     maxPointers=Math.max(maxPointers,pointers.size);
     dragging=true; moved=0; lastX=e.clientX; lastY=e.clientY;
     cv.classList.add('grab');
     if(cv.setPointerCapture){ try{cv.setPointerCapture(e.pointerId);}catch(_){} }
-    if(pointers.size===2) pinchPrev=twoDist();
-  });
+    if(pointers.size===2){
+      pinchPrev=twoDist();
+      const c=twoCenter(); pinchPrevCx=c.x; pinchPrevCy=c.y;
+    }
+  },{passive:false});
 
   cv.addEventListener('pointermove',e=>{
+    e.preventDefault();
     const mx=e.clientX,my=e.clientY;
     if(pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:mx,y:my});
 
     // two-finger pinch -> zoom
     if(pointers.size>=2){
       const d=twoDist();
+      const c=twoCenter();
       if(pinchPrev>0){
         const ratio=pinchPrev/d;
         targetDist=Math.max(MINDIST,Math.min(MAXDIST,targetDist*ratio));
+
+        // Two-finger move pans the whole scene. This fixes mobile cases
+        // where the network is visible but feels trapped/cut inside the frame.
+        panX += c.x - pinchPrevCx;
+        panY += c.y - pinchPrevCy;
       }
-      pinchPrev=d; moved+=999;   // gesture, not a tap
+      pinchPrev=d;
+      pinchPrevCx=c.x;
+      pinchPrevCy=c.y;
+      moved+=999;   // gesture, not a tap
       return;
     }
 
@@ -744,9 +812,10 @@ const ORGANS = [
       if(ho!==hoverOrgan){hoverOrgan=ho;}
       cv.style.cursor=(h||ho)?'pointer':'grab';
     }
-  });
+  },{passive:false});
 
   function endPointer(e){
+    e.preventDefault();
     pointers.delete(e.pointerId);
     if(pointers.size<2) pinchPrev=0;
     if(pointers.size===0){
@@ -762,13 +831,17 @@ const ORGANS = [
       lastX=rem.x; lastY=rem.y;
     }
   }
-  cv.addEventListener('pointerup',endPointer);
-  cv.addEventListener('pointercancel',endPointer);
+  cv.addEventListener('pointerup',endPointer,{passive:false});
+  cv.addEventListener('pointercancel',endPointer,{passive:false});
 
   cv.addEventListener('wheel',e=>{
     e.preventDefault();
     targetDist=Math.max(MINDIST,Math.min(MAXDIST,targetDist*(1+Math.sign(e.deltaY)*0.12)));
   },{passive:false});
+
+  ['gesturestart','gesturechange','gestureend'].forEach(evt=>{
+    cv.addEventListener(evt, e => e.preventDefault(), {passive:false});
+  });
 
   // ================= UI: LEGEND =================
   const legItems=document.getElementById('legItems');
@@ -860,7 +933,8 @@ const ORGANS = [
     search.value='';searchHit=new Set();closeInfo();hoverOrgan=null;hoverNode=null;
     activeCats=new Set(Object.keys(CATEGORIES)); activeCats.delete('organ');
     [...legItems.children].forEach(x=>{ if(x.dataset.cat!=='organ') x.classList.remove('off'); });
-    targetDist = W<520 ? 1650 : (W<820 ? 1380 : 1150);
+    targetDist = W<520 ? 2150 : (W<820 ? 1750 : 1150);
+    panX=0; panY=W<520 ? 24 : 0;
     yaw=0.5;pitch=-0.25;
   };
 
