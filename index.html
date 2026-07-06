@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Родопски силивряк — 3D мрежа на връзките</title>
+<style>
+  :root{
+    --bg1:#0e2118; --bg2:#050d09; --glass:rgba(10,26,19,.78);
+    --line:rgba(120,190,150,.28); --accent:#7ac74f; --ink:#e8f3ea;
+    --muted:#9fc4ab;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;background:#050d09;overscroll-behavior:none;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--ink);}
+  #stage{position:fixed;inset:0;display:block;cursor:grab;touch-action:none;}
+  #stage.grab{cursor:grabbing;}
+
+  .panel{position:fixed;background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border:1px solid rgba(122,199,79,.28);border-radius:14px;
+    box-shadow:0 10px 40px rgba(0,0,0,.45);}
+
+  /* Заглавие */
+  #title{top:16px;left:14px;padding:12px 16px;max-width:min(46vw,420px);z-index:5;}
+  #title h1{margin:0;font-size:18px;letter-spacing:.3px;font-weight:700;}
+  #title h1 .lat{color:var(--muted);font-weight:400;font-style:italic;font-size:13.5px;}
+  #title p{margin:6px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5;}
+
+  /* Мобилни бутони-тулбар (скрити на десктоп) */
+  #mtools{position:fixed;top:16px;right:14px;display:none;gap:8px;z-index:7;}
+  #mtools .mbtn{background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border:1px solid rgba(122,199,79,.32);color:var(--ink);border-radius:12px;
+    padding:10px 12px;font-size:14px;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.4);}
+  #mtools .mbtn:active{background:rgba(122,199,79,.24);}
+
+  /* Легенда */
+  #legend{top:16px;right:14px;padding:12px 14px;width:236px;z-index:6;}
+  #legend h2{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);}
+  .leg-item{display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;
+    cursor:pointer;font-size:13.5px;user-select:none;transition:background .15s,opacity .15s;}
+  .leg-item:hover{background:rgba(255,255,255,.06);}
+  .leg-item.off{opacity:.32;}
+  .dot{width:14px;height:14px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor;}
+
+  /* Търсене */
+  #searchWrap{bottom:calc(16px + var(--safe-b));left:14px;padding:9px 11px;display:flex;gap:8px;
+    align-items:center;width:min(88vw,340px);z-index:6;}
+  #search{flex:1;min-width:0;background:rgba(0,0,0,.35);border:1px solid rgba(122,199,79,.3);
+    color:var(--ink);border-radius:9px;padding:11px 12px;font-size:16px;outline:none;}
+  #search::placeholder{color:#7fa189;}
+  #search:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(122,199,79,.14);}
+  .sbtn{background:rgba(122,199,79,.16);border:1px solid rgba(122,199,79,.35);color:var(--ink);
+    border-radius:9px;padding:11px 12px;font-size:13px;cursor:pointer;white-space:nowrap;}
+  .sbtn:active{background:rgba(122,199,79,.3);}
+  .sbtn:hover{background:rgba(122,199,79,.28);}
+
+  /* Инфо панел */
+  #info{right:14px;bottom:calc(16px + var(--safe-b));width:min(90vw,360px);padding:0;overflow:hidden;
+    transform:translateY(14px);opacity:0;pointer-events:none;transition:.22s ease;z-index:8;}
+  #info.show{transform:none;opacity:1;pointer-events:auto;}
+  #info .head{padding:14px 16px 10px;display:flex;gap:10px;align-items:flex-start;}
+  #info .cbar{width:5px;border-radius:4px;align-self:stretch;min-height:38px;flex:none;}
+  #info .htext h3{margin:0;font-size:16px;line-height:1.25;}
+  #info .htext .cat{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:3px;}
+  #info .body{padding:0 16px 14px;font-size:13.5px;line-height:1.62;color:#dcefe1;}
+  #info .rel{padding:0 16px 15px;}
+  #info .rel .rtitle{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:2px 0 7px;}
+  #info .chip{display:inline-block;font-size:12.5px;padding:6px 11px;margin:0 6px 6px 0;border-radius:20px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);cursor:pointer;transition:.15s;}
+  #info .chip:active{background:rgba(122,199,79,.24);}
+  #info .chip:hover{background:rgba(122,199,79,.2);border-color:var(--accent);}
+  #info .close{position:absolute;top:9px;right:11px;width:32px;height:32px;border-radius:50%;
+    border:none;background:rgba(255,255,255,.08);color:var(--ink);font-size:18px;cursor:pointer;line-height:1;}
+  #info .close:active{background:rgba(255,255,255,.2);}
+
+  /* Помощ / контроли */
+  #hint{bottom:calc(16px + var(--safe-b));left:50%;transform:translateX(-50%);padding:7px 14px;
+    font-size:11.5px;color:var(--muted);pointer-events:none;white-space:nowrap;z-index:4;}
+  #toggleRot{position:fixed;bottom:calc(64px + var(--safe-b));left:14px;z-index:6;}
+  #toggleBody{position:fixed;bottom:calc(108px + var(--safe-b));left:14px;z-index:6;}
+  #toggleBody.off,#toggleRot.off{opacity:.6;}
+
+  /* ---------- МОБИЛЕН ЛЕЙАУТ ---------- */
+  @media (max-width:820px){
+    #title{max-width:none;right:76px;left:12px;top:12px;padding:10px 13px;}
+    #title h1{font-size:15.5px;}
+    #title h1 .lat{display:block;font-size:12px;margin-top:2px;}
+    #title p{display:none;}
+    #hint{display:none;}
+
+    #mtools{display:flex;top:12px;}
+    /* легендата става падащо меню */
+    #legend{top:64px;right:12px;left:12px;width:auto;
+      max-height:0;overflow:hidden;padding:0 14px;opacity:0;
+      transition:max-height .28s ease,opacity .2s ease,padding .28s ease;}
+    #legend.open{max-height:60vh;overflow:auto;padding:12px 14px;opacity:1;}
+    #legend .leg-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;}
+
+    #toggleRot{display:none;} /* дублира се в тулбара */
+    #toggleBody{display:none;}
+
+    /* търсене: цяла ширина долу */
+    #searchWrap{left:12px;right:12px;width:auto;bottom:calc(12px + var(--safe-b));}
+
+    /* инфо: bottom sheet */
+    #info{left:12px;right:12px;width:auto;bottom:calc(70px + var(--safe-b));
+      max-height:52vh;overflow:auto;border-radius:16px;}
+    #info.show{transform:none;}
+  }
+  @media (max-width:520px){
+    #legend .leg-grid{grid-template-columns:1fr;}
+  }
+  .hidden{display:none!important;}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div class="panel" id="title">
+  <h1>Родопски силивряк <span class="lat">Haberlea rhodopensis</span></h1>
+  <p>Интерактивна 3D мрежа на връзките — от еволюцията и физиологията, през фитохимията, до медицината и козметологията. Кликнете върху възел за детайли.</p>
+</div>
+
+<div id="mtools">
+  <button class="mbtn" id="mLegend" aria-label="Категории">☰</button>
+  <button class="mbtn" id="mBody" aria-label="Тяло">🧍</button>
+  <button class="mbtn" id="mRot" aria-label="Въртене">⏸︎</button>
+</div>
+
+<div class="panel" id="legend">
+  <h2>Категории</h2>
+  <div id="legItems" class="leg-grid"></div>
+</div>
+
+<div class="panel" id="searchWrap">
+  <input id="search" placeholder="Търсене…" autocomplete="off" autocapitalize="off" autocorrect="off">
+  <button class="sbtn" id="resetBtn">Нулирай</button>
+</div>
+
+<button class="panel sbtn" id="toggleBody">🧍 Тяло</button>
+<button class="panel sbtn" id="toggleRot">⏸︎ Въртене</button>
+
+<div class="panel" id="info">
+  <button class="close" id="infoClose">×</button>
+  <div class="head"><div class="cbar" id="iCbar"></div>
+    <div class="htext"><h3 id="iTitle"></h3><div class="cat" id="iCat"></div></div></div>
+  <div class="body" id="iBody"></div>
+  <div class="rel" id="iRel"></div>
+</div>
+
+<div class="panel" id="hint">Плъзнете за въртене · Колелце за мащаб · Клик върху възел за детайли</div>
+
+<script>
+// ==== DATA (inlined) ====
+// ===== ДАННИ: Родопски силивряк (Haberlea rhodopensis) =====
+// Извлечени директно от книжката. Категории с цветове (природна/минерална палитра).
+
+const CATEGORIES = {
+  center:  { name: "Растението",        color: "#c07de0" },
+  evo:     { name: "Еволюция / произход", color: "#d9a441" },
+  mech:    { name: "Механизми",          color: "#2fbfa0" },
+  chem:    { name: "Съставки",           color: "#7ac74f" },
+  bio:     { name: "Биоефекти",          color: "#3fa7d6" },
+  app:     { name: "Приложения",         color: "#e0785f" },
+  cult:    { name: "Култура / легенди",  color: "#e6c463" },
+  cons:    { name: "Опазване",           color: "#57cc99" }
+};
+
+const NODES = [
+  // ---- ЦЕНТЪР ----
+  { id:"silivryak", cat:"center", size:22, label:"Родопски силивряк",
+    desc:"Haberlea rhodopensis — балкански ендемит от сем. Gesneriaceae. „Възкръсващо растение“, преживяващо загуба до 95% от водата си и връщащо се към живот за 24–48 ч. Терциерен реликт на над 25 млн. години." },
+
+  // ---- ЕВОЛЮЦИЯ / ПРОИЗХОД ----
+  { id:"relikt", cat:"evo", size:13, label:"Терциерен реликт (25 млн. г.)",
+    desc:"Жив фосил, оцелял отпреди последната ледникова епоха. Приютил се е в рефугиумите на Родопите и е развил уникалните си механизми за толерантност към суша и студ — генетично различен от повечето съвременни растения." },
+  { id:"endemit", cat:"evo", size:11, label:"Балкански ендемит",
+    desc:"Среща се единствено в България (Родопите, Стара планина, Средна гора, Предбалкана) и в Североизточна Гърция (Гръцки Родопи). Обитава варовикови скали, пукнатини и сенчести дерета със северно изложение." },
+  { id:"poikilo", cat:"evo", size:10, label:"Пойкилохидричен вид",
+    desc:"Организъм, който не поддържа постоянно вътрешно съдържание на вода, а следва влажността на средата — способен да изсъхва напълно и да се рехидратира без да загива." },
+
+  // ---- МЕХАНИЗМИ ----
+  { id:"anabioza", cat:"mech", size:15, label:"Анабиоза",
+    desc:"При липса на вода растението не умира, а изпада в състояние на почти спрян метаболизъм. Изследвания показват, че дори след 31 месеца в хербарий тъканите показват признаци на живот при овлажняване." },
+  { id:"vitrifikacia", cat:"mech", size:12, label:"Витрификация (стъкловидно състояние)",
+    desc:"Цитоплазмата преминава в стъкловидно състояние, което спира почти всички метаболитни процеси и предотвратява кристализацията на остатъчната вода — иначе фатална за клетките." },
+  { id:"svivane", cat:"mech", size:9, label:"Контролирано свиване на клетките",
+    desc:"Клетъчната стена се нагъва контролирано, за да не се разкъса цитоплазмената мембрана — рядък феномен сред растенията." },
+  { id:"hlorofil", cat:"mech", size:10, label:"Запазване на хлорофила",
+    desc:"Хомоойхлорофилно растение: за разлика от други, не губи хлорофила си при суша, а го запазва в неактивно състояние — така възобновява фотосинтезата мигновено след дъжд." },
+  { id:"transkriptom", cat:"mech", size:11, label:"Транскриптомно препрограмиране",
+    desc:"Мащабно генно превключване при дехидратация: гените за фотосинтеза и растеж се потискат (пестене на енергия), а се активират гени за защита." },
+  { id:"autofagia", cat:"mech", size:9, label:"Автофагия",
+    desc:"Самопочистване на клетките — активира се при дехидратация, за да отстрани увредени компоненти и да поддържа клетъчната цялост." },
+  { id:"lea", cat:"mech", size:9, label:"LEA протеини / шаперони",
+    desc:"Защитни протеини и шаперони, чийто синтез се активира при засушаване; стабилизират другите протеини и мембраните в сухо състояние." },
+  { id:"vodni_klasteri", cat:"mech", size:9, label:"Водни клъстери / димери",
+    desc:"При изсушаване свободните водни молекули намаляват и се образуват димери и клъстери. Структурираната вода при рехидратация прави възстановяването по-ефективно — водата действа като информационна матрица за „паметта“ за живот." },
+
+  // ---- СЪСТАВКИ (ФИТОХИМИЯ) ----
+  { id:"mikonozid", cat:"chem", size:18, label:"Миконозид (до 88.8%)",
+    desc:"Кофеоил-фенилетаноиден гликозид (CPG) — уникалният хемотаксономичен маркер на вида. Доминиращ компонент на фенолната смес. Действа като структурен стабилизатор на мембраните и мощен антиоксидант — „химическият щит“ на растението." },
+  { id:"ferulova", cat:"chem", size:8, label:"Ферулова киселина",
+    desc:"Фенолна киселина с антиоксидантно действие; поддържа се в постоянно високи нива дори при нормални условия („грундиране“ срещу стрес)." },
+  { id:"kafeena", cat:"chem", size:8, label:"Кафеена киселина",
+    desc:"Фенолна киселина — неутрализира свободните радикали (ROS), образувани при воден стрес или UV радиация." },
+  { id:"sinapova", cat:"chem", size:8, label:"Синапова киселина",
+    desc:"Фенолна киселина от антиоксидантния арсенал на растението, поддържана постоянно като превантивна защита." },
+  { id:"siringova", cat:"chem", size:7, label:"Сирингова киселина",
+    desc:"Фенолна киселина с антиоксидантни свойства, част от полифенолния профил на екстракта." },
+  { id:"luteolin", cat:"chem", size:8, label:"Лутеолин",
+    desc:"Флавоноид — мощен улавач на свободни радикали (ROS), които се образуват масово при воден стрес и UV." },
+  { id:"kvercetin", cat:"chem", size:8, label:"Кверцетин",
+    desc:"Флавоноид с изразена антиоксидантна активност; част от защитата срещу оксидативен стрес." },
+  { id:"hesperidin", cat:"chem", size:7, label:"Хесперидин",
+    desc:"Флавоноид от фитохимичния профил на силивряка, допринасящ за антиоксидантния капацитет." },
+  { id:"zaharoza", cat:"chem", size:10, label:"Захароза",
+    desc:"Натрупва се в огромни количества при суша и студ. Действа като „антифриз“ и заместител на водата — поддържа структурата на протеините и мембраните и позволява стъкловидното състояние." },
+  { id:"rafinoza", cat:"chem", size:9, label:"Рафиноза",
+    desc:"Захар-криопротектор; заедно със захарозата стабилизира клетките при дехидратация и ниски температури." },
+  { id:"toko", cat:"chem", size:8, label:"Токофероли (Витамин Е)",
+    desc:"Нивата им се увеличават няколко пъти при стрес, за да предпазят клетъчните мембрани от окисление." },
+  { id:"sitosterol", cat:"chem", size:8, label:"β-ситостерол",
+    desc:"Стерол, който се натрупва за стабилизиране на клетъчните стени и мембрани в сухо състояние." },
+
+  // ---- БИОЕФЕКТИ ----
+  { id:"antioksidant", cat:"bio", size:14, label:"Антиоксидантна защита",
+    desc:"Изключително висока активност при тестове за улавяне на радикали (ORAC, ABTS). Основата на почти всички доказани полезни ефекти на растението." },
+  { id:"sod_cat", cat:"bio", size:9, label:"↑ SOD / CAT / глутатион",
+    desc:"Екстрактът повишава нивата на ендогенните защитни ензими — супероксид дисмутаза (SOD), каталаза (CAT) и глутатион пероксидаза." },
+  { id:"dna_zashtita", cat:"bio", size:11, label:"Защита на ДНК от гама-лъчи",
+    desc:"Приложен преди облъчване с гама-лъчи, екстрактът значително намалява увреждането на ДНК и броя на двойноверижните разкъсвания (Georgieva et al.)." },
+  { id:"apoptoza", cat:"bio", size:11, label:"Апоптоза (каспази)",
+    desc:"Предизвиква програмирана клетъчна смърт в раковите клетки чрез активиране на пътища, свързани с каспазите." },
+  { id:"nfkb", cat:"bio", size:8, label:"Потискане на NF-kB",
+    desc:"Потиска NF-kB — фактор на възпалението, който често помага на раковите клетки да оцеляват." },
+  { id:"kolagen6", cat:"bio", size:10, label:"Колаген VI +822%",
+    desc:"Проучване (Dell'Acqua) върху фибробласти: синтезът на Колаген VI нараства с +822%. Колаген VI е ключов за структурната цялост на кожата." },
+  { id:"kolagen16", cat:"bio", size:10, label:"Колаген XVI +928%",
+    desc:"Синтезът на Колаген XVI нараства с +928% — принос към стягането на контура и изглаждането на бръчки." },
+  { id:"elastin", cat:"bio", size:9, label:"Еластин +144%",
+    desc:"Синтезът на еластин нараства с +144%. Еластинът осигурява гъвкавостта на кожата." },
+  { id:"membrana", cat:"bio", size:10, label:"Стабилизиране на мембраните",
+    desc:"Съставки като миконозид, захари, токофероли и стероли защитават липидите в мембраните от пероксидация и разпад в сухо състояние." },
+  { id:"imuno", cat:"bio", size:9, label:"Имуномодулация / фагоцитоза",
+    desc:"Екстрактите модулират имунния отговор чрез влияние върху цитокините; има данни за стимулиране на фагоцитозата." },
+
+  // ---- ПРИЛОЖЕНИЯ ----
+  { id:"onkologia", cat:"app", size:12, label:"Онкология (простата PC3/DU145)",
+    desc:"Селективна цитотоксичност спрямо ракови клетъчни линии на простатата (PC3 и DU145, андроген-независими), при слаба или никаква токсичност за здрави клетки — „Свещеният граал“ в онкологията." },
+  { id:"radiozashtita", cat:"app", size:11, label:"Радиозащита при лъчетерапия",
+    desc:"Потенциален кандидат за добавка при пациенти на лъчетерапия — за защита на здравите тъкани чрез намаляване на ДНК-уврежданията." },
+  { id:"antiage", cat:"app", size:12, label:"Anti-age козметика",
+    desc:"„Златен стандарт“ в натуралната козметика заради стимулирането на колаген (>800%) и еластин — ефект на изглаждане на бръчки и стягане." },
+  { id:"uv_zashtita", cat:"app", size:10, label:"UV / „синя светлина“ защита",
+    desc:"Богатият на полифеноли екстракт създава щит срещу UV-лъчи и оксидативния стрес от градското замърсяване — „градска защита“ и дълбока хидратация." },
+  { id:"detox", cat:"app", size:8, label:"Детокс чай",
+    desc:"В народната медицина се използва като чай за пречистване и укрепване на организма („Тибетски чай на младостта“ — по-скоро маркетингово име)." },
+  { id:"veterinarno", cat:"app", size:8, label:"Ветеринарно (шап)",
+    desc:"В Родопите се нарича „Шап“ или „Кита“. Традиционно се е използвала за лечение на шап по добитъка — оттам и името." },
+  { id:"rani", cat:"app", size:8, label:"Промиване на рани",
+    desc:"Използва се за промиване на рани заради антибактериалното действие — както при животни, така и при хора." },
+
+  // ---- КУЛТУРА / ЛЕГЕНДИ ----
+  { id:"orfej", cat:"cult", size:11, label:"Легенда за Орфей",
+    desc:"„Орфеево цвете“ — според легендата поникнало там, където паднали сълзите (или кръвта) на тракийския певец Орфей. Символ на победа над смъртта чрез възкресение." },
+  { id:"bezsmartniche", cat:"cult", size:9, label:"Безсмъртниче / Орфеево цвете",
+    desc:"Народни имена, отразяващи способността на растението да „възкръсва“ — символика, пряко свързана с мита за Орфей и подземното царство." },
+  { id:"moneti", cat:"cult", size:8, label:"Римски монети (богиня Родопа)",
+    desc:"Древните римляни са почитали растението — открити са монети с изображение на богинята Родопа, държаща цветето." },
+
+  // ---- ОПАЗВАНЕ / БИОТЕХНОЛОГИИ ----
+  { id:"chervena_kniga", cat:"cons", size:10, label:"Червена книга (застрашен)",
+    desc:"Защитен вид в Червената книга на България. Събирането от дивата природа с търговска цел е строго забранено — парадоксът на „растението-чудо“, което не можем да берем." },
+  { id:"in_vitro", cat:"cons", size:11, label:"In vitro култивиране",
+    desc:"Решението на парадокса: от малко парченце листо в стерилна среда се генерират хиляди идентични растения — без да се вреди на дивите популации." },
+  { id:"vertikalno", cat:"cons", size:9, label:"Вертикално земеделие",
+    desc:"Отглеждане в контролирана среда (вертикални ферми с LED осветление) за целогодишен добив на биомаса. Условията на стрес могат да се манипулират, за да се повиши миконозидът." }
+];
+
+const LINKS = [
+  // център → главни хъбове
+  ["silivryak","relikt"], ["silivryak","endemit"], ["silivryak","poikilo"],
+  ["silivryak","anabioza"], ["silivryak","mikonozid"], ["silivryak","orfej"],
+  ["silivryak","chervena_kniga"], ["silivryak","imuno"], ["silivryak","detox"],
+
+  // еволюция → механизъм
+  ["relikt","anabioza"], ["poikilo","anabioza"], ["endemit","poikilo"],
+
+  // механизми
+  ["anabioza","vitrifikacia"], ["anabioza","svivane"], ["anabioza","hlorofil"],
+  ["anabioza","transkriptom"], ["vodni_klasteri","anabioza"],
+  ["transkriptom","autofagia"], ["transkriptom","lea"], ["lea","membrana"],
+
+  // съставки → механизми/ефекти
+  ["mikonozid","antioksidant"], ["mikonozid","membrana"], ["mikonozid","apoptoza"],
+  ["mikonozid","kolagen6"], ["mikonozid","kolagen16"], ["mikonozid","elastin"],
+  ["ferulova","antioksidant"], ["kafeena","antioksidant"], ["sinapova","antioksidant"],
+  ["siringova","antioksidant"], ["luteolin","antioksidant"], ["kvercetin","antioksidant"],
+  ["hesperidin","antioksidant"],
+  ["zaharoza","vitrifikacia"], ["zaharoza","membrana"], ["rafinoza","vitrifikacia"],
+  ["toko","membrana"], ["sitosterol","membrana"],
+
+  // биоефекти → биоефекти / приложения
+  ["antioksidant","sod_cat"], ["antioksidant","dna_zashtita"],
+  ["antioksidant","uv_zashtita"], ["antioksidant","antiage"],
+  ["dna_zashtita","radiozashtita"],
+  ["apoptoza","nfkb"], ["apoptoza","onkologia"], ["nfkb","onkologia"],
+  ["kolagen6","antiage"], ["kolagen16","antiage"], ["elastin","antiage"],
+  ["membrana","anabioza"],
+
+  // народна медицина / приложения
+  ["detox","rani"], ["veterinarno","rani"], ["silivryak","veterinarno"],
+
+  // култура
+  ["orfej","bezsmartniche"], ["silivryak","bezsmartniche"], ["moneti","orfej"],
+
+  // опазване
+  ["chervena_kniga","in_vitro"], ["in_vitro","vertikalno"], ["vertikalno","mikonozid"]
+];
+
+// ===== ОРГАНИ / МИШЕНИ В ЧОВЕШКОТО ТЯЛО =====
+// pos = нормализирани координати спрямо центъра на фигурата (x надясно+, y надолу+)
+CATEGORIES.organ = { name:"Органи / мишени", color:"#eb7f8f" };
+
+const ORGANS = [
+  { id:"o_skin", name:"Кожа", pos:[-0.40,-0.18], outline:true,
+    desc:"Стимулиране на синтеза на Колаген VI (+822%) и Колаген XVI (+928%) и на еластин (+144%); защита от UV-лъчи и „синя светлина“; промиване на рани. Оттук идват anti-age ефектът и „градската защита“.",
+    sources:["kolagen6","kolagen16","elastin","uv_zashtita","antiage","rani","mikonozid"] },
+  { id:"o_immune", name:"Имунна система", pos:[-0.13,-0.30],
+    desc:"Екстрактите модулират имунния отговор чрез влияние върху цитокините и стимулират фагоцитозата — процесът, при който белите кръвни телца „изяждат“ патогени.",
+    sources:["imuno"] },
+  { id:"o_cells", name:"Клетки / ДНК", pos:[0.13,-0.30],
+    desc:"Радиозащита: приложен преди облъчване с гама-лъчи, екстрактът намалява увреждането на ДНК и броя на двойноверижните разкъсвания — защита на здравите тъкани при лъчетерапия.",
+    sources:["radiozashtita","dna_zashtita"] },
+  { id:"o_liver", name:"Черен дроб", pos:[0.16,-0.03],
+    desc:"Традиционна употреба като чай за пречистване (детокс) и укрепване на организма — от народната медицина на Родопите.",
+    sources:["detox"] },
+  { id:"o_prostate", name:"Простата", pos:[0.0,0.17],
+    desc:"Селективна цитотоксичност спрямо ракови клетъчни линии на простатата (PC3/DU145) чрез предизвикване на апоптоза и потискане на NF-kB, при щадене на здравите клетки.",
+    sources:["onkologia","apoptoza","nfkb"] }
+];
+
+</script>
+<script>
+// ================= 3D FORCE-DIRECTED ENGINE (pure canvas) =================
+(function(){
+  const cv = document.getElementById('stage');
+  const ctx = cv.getContext('2d');
+  let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+
+  // --- build maps ---
+  const nodeById = {};
+  NODES.forEach(n=>{
+    n.x=(Math.random()-.5)*600; n.y=(Math.random()-.5)*600; n.z=(Math.random()-.5)*600;
+    n.vx=0; n.vy=0; n.vz=0;
+    n.col=CATEGORIES[n.cat].color;
+    n.adj=[];
+    nodeById[n.id]=n;
+  });
+  const edges=[];
+  LINKS.forEach(([a,b])=>{
+    const na=nodeById[a], nb=nodeById[b];
+    if(!na||!nb) return;
+    edges.push({a:na,b:nb});
+    na.adj.push(nb); nb.adj.push(na);
+  });
+
+  // --- organs / body targets ---
+  const organById={};
+  NODES.forEach(n=>n.organs=[]);
+  ORGANS.forEach(o=>{
+    o.col=CATEGORIES.organ.color;
+    o.srcNodes=o.sources.map(id=>nodeById[id]).filter(Boolean);
+    o.srcNodes.forEach(n=>n.organs.push(o));
+    organById[o.id]=o;
+    o._sx=0; o._sy=0; o._r=0;   // screen position, filled each frame
+  });
+
+  // ---- camera / view state ----
+  let yaw=0.5, pitch=-0.25, dist=1150, targetDist=1150;
+  let autoRotate=true;
+  const focal=900;
+
+  // ---- interaction state ----
+  let hoverNode=null, selNode=null;
+  let hoverOrgan=null, selOrgan=null;
+  let bodyMode=true;
+  let activeCats=new Set(Object.keys(CATEGORIES));
+  activeCats.delete('organ'); // 'organ' is not a force category; controlled by bodyMode
+  let searchHit=new Set(); // ids matching search (highlighted)
+  let dragging=false, lastX=0, lastY=0, moved=0;
+  let smallScreen=false, firstResize=true;
+
+  function resize(){
+    W = window.innerWidth || document.documentElement.clientWidth || cv.clientWidth || 360;
+    H = window.innerHeight || document.documentElement.clientHeight || cv.clientHeight || 640;
+    cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+    smallScreen = W<=820;
+    // only lock the initial fit once we truly have real (non-zero) dimensions
+    if(firstResize && W>10){
+      targetDist = dist = W<520 ? 1650 : (W<820 ? 1380 : 1150);
+      firstResize=false;
+    }
+  }
+  window.addEventListener('resize',resize);
+  window.addEventListener('orientationchange',()=>setTimeout(resize,150));
+  window.addEventListener('load',()=>setTimeout(resize,60));   // some webviews report 0 width until load
+  resize();
+
+  // ================= FORCE SIMULATION =================
+  function simulate(alpha){
+    const N=NODES.length;
+    // repulsion (O(n^2), fine for ~48 nodes)
+    for(let i=0;i<N;i++){
+      const a=NODES[i];
+      for(let j=i+1;j<N;j++){
+        const b=NODES[j];
+        let dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
+        let d2=dx*dx+dy*dy+dz*dz+0.01;
+        let d=Math.sqrt(d2);
+        const rep=42000/d2;
+        const fx=dx/d*rep, fy=dy/d*rep, fz=dz/d*rep;
+        a.vx+=fx; a.vy+=fy; a.vz+=fz;
+        b.vx-=fx; b.vy-=fy; b.vz-=fz;
+      }
+      // gravity to center
+      a.vx-=a.x*0.012; a.vy-=a.y*0.012; a.vz-=a.z*0.012;
+    }
+    // springs
+    const REST=155;
+    edges.forEach(e=>{
+      let dx=e.b.x-e.a.x, dy=e.b.y-e.a.y, dz=e.b.z-e.a.z;
+      let d=Math.sqrt(dx*dx+dy*dy+dz*dz)+0.01;
+      const f=(d-REST)*0.02;
+      const fx=dx/d*f, fy=dy/d*f, fz=dz/d*f;
+      e.a.vx+=fx; e.a.vy+=fy; e.a.vz+=fz;
+      e.b.vx-=fx; e.b.vy-=fy; e.b.vz-=fz;
+    });
+    // integrate
+    const damp=0.86;
+    NODES.forEach(n=>{
+      n.vx*=damp; n.vy*=damp; n.vz*=damp;
+      n.x+=n.vx*alpha; n.y+=n.vy*alpha; n.z+=n.vz*alpha;
+    });
+  }
+  // warm-up layout
+  for(let k=0;k<220;k++) simulate(0.9);
+  // pin center node near origin
+  const centerN=nodeById['silivryak'];
+
+  // ================= PROJECTION =================
+  function project(n){
+    // rotate by yaw (around Y) then pitch (around X)
+    const cy=Math.cos(yaw), sy=Math.sin(yaw);
+    let x=n.x*cy - n.z*sy;
+    let z=n.x*sy + n.z*cy;
+    let y=n.y;
+    const cp=Math.cos(pitch), sp=Math.sin(pitch);
+    let y2=y*cp - z*sp;
+    let z2=y*sp + z*cp;
+    const zc=z2+dist;                 // camera depth
+    const s=focal/Math.max(zc,1);
+    return { sx:W/2 + x*s, sy:H/2 + y2*s, scale:s, depth:zc };
+  }
+
+  // ================= BODY (human figure + organs) =================
+  function bodyLayout(){
+    const bh = Math.min(H*0.66, 520);   // body pixel height
+    const s  = bh/2.3;                  // normalized-unit -> px
+    const cx = smallScreen ? W*0.50 : W*0.76;
+    const cy = smallScreen ? H*0.42 : H*0.52;
+    return {cx,cy,s};
+  }
+  function drawBody(L,skinHot){
+    const {cx,cy,s}=L;
+    const P=(nx,ny)=>[cx+nx*s, cy+ny*s];
+    function limb(x1,y1,x2,y2,w,col){
+      const a=P(x1,y1),b=P(x2,y2);
+      ctx.lineCap='round'; ctx.lineWidth=w*s;
+      ctx.strokeStyle=col; ctx.beginPath();
+      ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    }
+    ctx.save();
+    ctx.shadowColor = skinHot ? 'rgba(235,127,143,0.75)' : 'rgba(120,200,150,0.45)';
+    ctx.shadowBlur  = skinHot ? 26 : 16;
+    const col = skinHot ? 'rgba(235,140,155,0.22)' : 'rgba(150,205,175,0.13)';
+    // torso, shoulders, arms, legs
+    limb(0,-0.60, 0,0.06, 0.42, col);
+    limb(-0.32,-0.54, 0.32,-0.54, 0.14, col);
+    limb(-0.30,-0.50, -0.47,0.14, 0.13, col);
+    limb(0.30,-0.50, 0.47,0.14, 0.13, col);
+    limb(-0.12,0.02, -0.16,0.98, 0.16, col);
+    limb(0.12,0.02, 0.16,0.98, 0.16, col);
+    // head
+    const hd=P(0,-0.86);
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(hd[0],hd[1],0.17*s,0,7); ctx.fill();
+    // crisp outline pass
+    ctx.shadowBlur=0;
+    ctx.strokeStyle = skinHot ? 'rgba(240,160,175,0.55)' : 'rgba(170,215,185,0.30)';
+    ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.arc(hd[0],hd[1],0.17*s,0,7); ctx.stroke();
+    ctx.restore();
+  }
+  // compute organ screen positions for current frame
+  function layoutOrgans(L){
+    const {cx,cy,s}=L;
+    ORGANS.forEach(o=>{ o._sx=cx+o.pos[0]*s; o._sy=cy+o.pos[1]*s; o._r=smallScreen?9:10; });
+  }
+  function pickOrgan(mx,my){
+    if(!bodyMode) return null;
+    let best=null,bd=1e9;
+    ORGANS.forEach(o=>{
+      const d=Math.hypot(mx-o._sx,my-o._sy);
+      const rr=o._r+16;
+      if(d<rr && d<bd){bd=d;best=o;}
+    });
+    return best;
+  }
+
+  // ================= RENDER =================
+  function catActive(n){ return activeCats.has(n.cat); }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // background gradient
+    const g=ctx.createRadialGradient(W*0.5,H*0.42,60, W*0.5,H*0.5, Math.max(W,H)*0.75);
+    g.addColorStop(0,'#123123'); g.addColorStop(0.55,'#0b1c13'); g.addColorStop(1,'#050d09');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+    // project all nodes
+    NODES.forEach(n=>{ const p=project(n); n._p=p; n._vis=catActive(n); });
+
+    // ---- unified focus: node OR organ ----
+    const focusNode = selNode || hoverNode;
+    const focusOrgan = selOrgan || hoverOrgan;
+    const anyFocus = !!(focusNode || focusOrgan);
+    const hlNodes=new Set(), hlOrgans=new Set();
+    if(focusNode){ hlNodes.add(focusNode.id);
+      focusNode.adj.forEach(a=>hlNodes.add(a.id));
+      focusNode.organs.forEach(o=>hlOrgans.add(o.id)); }
+    if(focusOrgan){ hlOrgans.add(focusOrgan.id);
+      focusOrgan.srcNodes.forEach(n=>hlNodes.add(n.id)); }
+
+    const anySearch=searchHit.size>0;
+
+    // body layout
+    const L=bodyLayout();
+    if(bodyMode){ layoutOrgans(L); drawBody(L, hlOrgans.has('o_skin')||selOrgan&&selOrgan.id==='o_skin'||hoverOrgan&&hoverOrgan.id==='o_skin'); }
+
+    // ---- graph edges (depth sorted back-to-front) ----
+    const edgeList=edges.map(e=>({e,z:(e.a._p.depth+e.b._p.depth)/2})).sort((A,B)=>B.z-A.z);
+    edgeList.forEach(({e})=>{
+      if(!e.a._vis||!e.b._vis) return;
+      const pa=e.a._p, pb=e.b._p;
+      let hot = anyFocus && hlNodes.has(e.a.id)&&hlNodes.has(e.b.id);
+      let alpha = anyFocus ? (hot?0.85:0.05) : 0.18;
+      let lw = hot?2:1;
+      const depthFade=Math.min(1,700/pa.depth);
+      ctx.globalAlpha=alpha*Math.max(.35,depthFade);
+      if(hot){ const grad=ctx.createLinearGradient(pa.sx,pa.sy,pb.sx,pb.sy);
+        grad.addColorStop(0,e.a.col); grad.addColorStop(1,e.b.col); ctx.strokeStyle=grad; }
+      else ctx.strokeStyle='rgba(150,200,165,0.9)';
+      ctx.lineWidth=lw;
+      ctx.beginPath(); ctx.moveTo(pa.sx,pa.sy); ctx.lineTo(pb.sx,pb.sy); ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+
+    // ---- organ links (source node -> organ) ----
+    if(bodyMode){
+      const pulse=0.5+0.5*Math.sin(Date.now()*0.004);
+      ORGANS.forEach(o=>{
+        o.srcNodes.forEach(n=>{
+          if(!n._vis) return;
+          const p=n._p;
+          const hot = anyFocus && hlNodes.has(n.id) && hlOrgans.has(o.id);
+          let alpha = anyFocus ? (hot?0.9:0.03) : 0.20;
+          if(hot) alpha = 0.55+0.35*pulse;
+          ctx.globalAlpha=alpha;
+          const grad=ctx.createLinearGradient(p.sx,p.sy,o._sx,o._sy);
+          grad.addColorStop(0, n.col); grad.addColorStop(1, CATEGORIES.organ.color);
+          ctx.strokeStyle=grad; ctx.lineWidth=hot?2.2:1;
+          ctx.beginPath(); ctx.moveTo(p.sx,p.sy);
+          // gentle curve toward the body
+          const mx=(p.sx+o._sx)/2, my=(p.sy+o._sy)/2 - 24;
+          ctx.quadraticCurveTo(mx,my,o._sx,o._sy); ctx.stroke();
+        });
+      });
+      ctx.globalAlpha=1;
+    }
+
+    // ---- graph nodes (depth sorted) ----
+    const order=NODES.slice().sort((a,b)=>b._p.depth-a._p.depth);
+    order.forEach(n=>{
+      const p=n._p;
+      const r=Math.max(2, n.size*p.scale*1.15);
+      let vis=n._vis;
+      let dim = anyFocus && !hlNodes.has(n.id);
+      if(anySearch){ dim = dim || !searchHit.has(n.id); if(searchHit.has(n.id)) dim=false; }
+      const baseAlpha = vis ? (dim?0.16:1) : 0.05;
+
+      const glowR=r*3.2;
+      const halo=ctx.createRadialGradient(p.sx,p.sy,0,p.sx,p.sy,glowR);
+      halo.addColorStop(0, hexA(n.col, vis?(dim?0.10:0.55):0.03));
+      halo.addColorStop(1, hexA(n.col,0));
+      ctx.fillStyle=halo; ctx.beginPath();ctx.arc(p.sx,p.sy,glowR,0,7);ctx.fill();
+
+      const core=ctx.createRadialGradient(p.sx-r*0.3,p.sy-r*0.3,r*0.2,p.sx,p.sy,r);
+      core.addColorStop(0, lighten(n.col,.45)); core.addColorStop(1, n.col);
+      ctx.globalAlpha=baseAlpha; ctx.fillStyle=core;
+      ctx.beginPath();ctx.arc(p.sx,p.sy,r,0,7);ctx.fill();
+
+      if(n===selNode||n===hoverNode){
+        ctx.globalAlpha=1;ctx.lineWidth=2.2;ctx.strokeStyle='#eaffe9';
+        ctx.beginPath();ctx.arc(p.sx,p.sy,r+3.5,0,7);ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+
+      const labelThresh = smallScreen ? 13 : 11;
+      const scaleThresh = smallScreen ? 1.25 : 0.95;
+      const showLabel = vis && !dim && (n.size>=labelThresh || p.scale>scaleThresh || n===hoverNode || n===selNode || searchHit.has(n.id));
+      if(showLabel){
+        const fs=Math.max(10.5, Math.min(15, 8+n.size*p.scale*0.45));
+        ctx.font=`${(n===selNode||n===hoverNode)?'600':'500'} ${fs}px "Segoe UI",system-ui,sans-serif`;
+        ctx.textAlign='center';ctx.textBaseline='top';
+        const ty=p.sy+r+3;
+        ctx.globalAlpha=Math.min(1,baseAlpha+0.15);
+        ctx.lineWidth=3;ctx.strokeStyle='rgba(4,10,7,0.85)';
+        ctx.strokeText(n.label,p.sx,ty);
+        ctx.fillStyle='#eaf7ec'; ctx.fillText(n.label,p.sx,ty);
+        ctx.globalAlpha=1;
+      }
+    });
+
+    // ---- organs (draw on top of body, above nodes) ----
+    if(bodyMode){
+      ORGANS.forEach(o=>{
+        const dim = anyFocus && !hlOrgans.has(o.id);
+        const a = dim?0.25:1;
+        const r=o._r;
+        // halo
+        const halo=ctx.createRadialGradient(o._sx,o._sy,0,o._sx,o._sy,r*4);
+        halo.addColorStop(0, hexA(o.col, dim?0.12:0.7));
+        halo.addColorStop(1, hexA(o.col,0));
+        ctx.fillStyle=halo; ctx.beginPath();ctx.arc(o._sx,o._sy,r*4,0,7);ctx.fill();
+        // core
+        ctx.globalAlpha=a;
+        const core=ctx.createRadialGradient(o._sx-r*0.3,o._sy-r*0.3,r*0.2,o._sx,o._sy,r);
+        core.addColorStop(0, lighten(o.col,.5)); core.addColorStop(1,o.col);
+        ctx.fillStyle=core; ctx.beginPath();ctx.arc(o._sx,o._sy,r,0,7);ctx.fill();
+        if(o===selOrgan||o===hoverOrgan){
+          ctx.globalAlpha=1;ctx.lineWidth=2.2;ctx.strokeStyle='#fff';
+          ctx.beginPath();ctx.arc(o._sx,o._sy,r+4,0,7);ctx.stroke();
+        }
+        // label
+        ctx.globalAlpha=Math.min(1,a+0.1);
+        ctx.font=`600 ${smallScreen?11:12.5}px "Segoe UI",system-ui,sans-serif`;
+        ctx.textAlign='left'; ctx.textBaseline='middle';
+        const lx=o._sx+r+7, ly=o._sy;
+        ctx.lineWidth=3; ctx.strokeStyle='rgba(4,10,7,0.9)';
+        ctx.strokeText(o.name,lx,ly);
+        ctx.fillStyle='#ffe9ec'; ctx.fillText(o.name,lx,ly);
+        ctx.globalAlpha=1;
+      });
+    }
+  }
+
+  // ================= HELPERS =================
+  function hexA(hex,a){const c=hx(hex);return `rgba(${c[0]},${c[1]},${c[2]},${a})`;}
+  function lighten(hex,t){const c=hx(hex);
+    return `rgb(${Math.round(c[0]+(255-c[0])*t)},${Math.round(c[1]+(255-c[1])*t)},${Math.round(c[2]+(255-c[2])*t)})`;}
+  function hx(hex){hex=hex.replace('#','');return [parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16)];}
+
+  // ================= LOOP =================
+  function tick(){
+    if(autoRotate && !dragging) yaw+=0.0022;
+    dist += (targetDist-dist)*0.08;
+    // gentle continuous relaxation so layout stays alive but stable
+    simulate(0.06);
+    // keep center near origin
+    centerN.x*=0.9; centerN.y*=0.9; centerN.z*=0.9;
+    draw();
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  // ================= PICKING =================
+  function pick(mx,my){
+    let best=null,bestD=1e9;
+    NODES.forEach(n=>{
+      if(!n._vis)return;
+      const p=n._p; const r=Math.max(6,n.size*p.scale*1.15)+6;
+      const d=Math.hypot(mx-p.sx,my-p.sy);
+      if(d<r && d<bestD){bestD=d;best=n;}
+    });
+    return best;
+  }
+
+  // ================= EVENTS (mouse + touch, unified via pointers) =================
+  const pointers=new Map();   // pointerId -> {x,y}
+  let maxPointers=0, pinchPrev=0;
+  const MINDIST=420, MAXDIST=2600;
+
+  function twoDist(){
+    const a=[...pointers.values()];
+    return Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+  }
+
+  cv.addEventListener('pointerdown',e=>{
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    maxPointers=Math.max(maxPointers,pointers.size);
+    dragging=true; moved=0; lastX=e.clientX; lastY=e.clientY;
+    cv.classList.add('grab');
+    if(cv.setPointerCapture){ try{cv.setPointerCapture(e.pointerId);}catch(_){} }
+    if(pointers.size===2) pinchPrev=twoDist();
+  });
+
+  cv.addEventListener('pointermove',e=>{
+    const mx=e.clientX,my=e.clientY;
+    if(pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:mx,y:my});
+
+    // two-finger pinch -> zoom
+    if(pointers.size>=2){
+      const d=twoDist();
+      if(pinchPrev>0){
+        const ratio=pinchPrev/d;
+        targetDist=Math.max(MINDIST,Math.min(MAXDIST,targetDist*ratio));
+      }
+      pinchPrev=d; moved+=999;   // gesture, not a tap
+      return;
+    }
+
+    // one finger / mouse drag -> rotate
+    if(dragging && pointers.size===1){
+      const dx=mx-lastX,dy=my-lastY; moved+=Math.abs(dx)+Math.abs(dy);
+      yaw+=dx*0.005; pitch+=dy*0.005;
+      pitch=Math.max(-1.45,Math.min(1.45,pitch));
+      lastX=mx; lastY=my;
+    } else if(!dragging && e.pointerType==='mouse'){
+      const h=pick(mx,my);
+      const ho = h?null:pickOrgan(mx,my);
+      if(h!==hoverNode){hoverNode=h;}
+      if(ho!==hoverOrgan){hoverOrgan=ho;}
+      cv.style.cursor=(h||ho)?'pointer':'grab';
+    }
+  });
+
+  function endPointer(e){
+    pointers.delete(e.pointerId);
+    if(pointers.size<2) pinchPrev=0;
+    if(pointers.size===0){
+      dragging=false; cv.classList.remove('grab');
+      if(maxPointers===1 && moved<8){
+        const o=pickOrgan(e.clientX,e.clientY);
+        if(o){ selectOrgan(o); }
+        else { const h=pick(e.clientX,e.clientY); selectNode(h); }
+      }
+      maxPointers=0;
+    } else {
+      const rem=[...pointers.values()][0];  // continue drag from remaining finger
+      lastX=rem.x; lastY=rem.y;
+    }
+  }
+  cv.addEventListener('pointerup',endPointer);
+  cv.addEventListener('pointercancel',endPointer);
+
+  cv.addEventListener('wheel',e=>{
+    e.preventDefault();
+    targetDist=Math.max(MINDIST,Math.min(MAXDIST,targetDist*(1+Math.sign(e.deltaY)*0.12)));
+  },{passive:false});
+
+  // ================= UI: LEGEND =================
+  const legItems=document.getElementById('legItems');
+  Object.entries(CATEGORIES).forEach(([key,c])=>{
+    const el=document.createElement('div');
+    el.className='leg-item';el.dataset.cat=key;
+    el.innerHTML=`<span class="dot" style="color:${c.color};background:${c.color}"></span><span>${c.name}</span>`;
+    if(key==='organ'){
+      el.onclick=()=>setBody(!bodyMode);   // organ row toggles the whole body view
+    } else {
+      el.onclick=()=>{
+        if(activeCats.has(key)){activeCats.delete(key);el.classList.add('off');}
+        else{activeCats.add(key);el.classList.remove('off');}
+        if(selNode && !activeCats.has(selNode.cat)) closeInfo();
+      };
+    }
+    legItems.appendChild(el);
+  });
+  const organLegItem=[...legItems.children].find(x=>x.dataset.cat==='organ');
+
+  // ================= UI: INFO PANEL =================
+  const info=document.getElementById('info');
+  function chipHandlers(rel){
+    rel.querySelectorAll('.chip[data-id]').forEach(ch=>{
+      ch.onclick=()=>{const t=nodeById[ch.dataset.id];
+        if(!activeCats.has(t.cat)){activeCats.add(t.cat);
+          [...legItems.children].find(x=>x.dataset.cat===t.cat)?.classList.remove('off');}
+        selectNode(t);};
+    });
+    rel.querySelectorAll('.chip[data-org]').forEach(ch=>{
+      ch.onclick=()=>{ if(!bodyMode) setBody(true); selectOrgan(organById[ch.dataset.org]); };
+    });
+  }
+  function selectNode(n){
+    selNode=n; selOrgan=null;
+    if(!n){closeInfo();return;}
+    const c=CATEGORIES[n.cat];
+    document.getElementById('iCbar').style.background=c.color;
+    document.getElementById('iTitle').textContent=n.label;
+    document.getElementById('iCat').textContent=c.name;
+    document.getElementById('iBody').textContent=n.desc;
+    const rel=document.getElementById('iRel');
+    let html='';
+    if(n.adj.length) html+='<div class="rtitle">Свързано с</div>'+
+      n.adj.map(a=>`<span class="chip" data-id="${a.id}">${a.label}</span>`).join('');
+    if(n.organs.length) html+='<div class="rtitle" style="margin-top:10px">Действа върху</div>'+
+      n.organs.map(o=>`<span class="chip" data-org="${o.id}" style="border-color:rgba(235,127,143,.5)">🧍 ${o.name}</span>`).join('');
+    rel.innerHTML=html; chipHandlers(rel);
+    info.classList.add('show');
+  }
+  function selectOrgan(o){
+    selOrgan=o; selNode=null;
+    if(!o){closeInfo();return;}
+    const c=CATEGORIES.organ;
+    document.getElementById('iCbar').style.background=c.color;
+    document.getElementById('iTitle').textContent=o.name;
+    document.getElementById('iCat').textContent='Орган / мишена в тялото';
+    document.getElementById('iBody').textContent=o.desc;
+    const rel=document.getElementById('iRel');
+    rel.innerHTML='<div class="rtitle">Действащи съставки / ефекти</div>'+
+      o.srcNodes.map(n=>`<span class="chip" data-id="${n.id}">${n.label}</span>`).join('');
+    chipHandlers(rel);
+    info.classList.add('show');
+  }
+  function closeInfo(){selNode=null;selOrgan=null;info.classList.remove('show');}
+  document.getElementById('infoClose').onclick=closeInfo;
+
+  // ================= UI: SEARCH =================
+  const search=document.getElementById('search');
+  function runSearch(){
+    const q=search.value.trim().toLowerCase();
+    searchHit=new Set();
+    if(q){
+      NODES.forEach(n=>{
+        if(n.label.toLowerCase().includes(q)||n.desc.toLowerCase().includes(q)||CATEGORIES[n.cat].name.toLowerCase().includes(q))
+          searchHit.add(n.id);
+      });
+    }
+  }
+  search.addEventListener('input',runSearch);
+  search.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      const q=search.value.trim().toLowerCase();
+      const first=NODES.find(n=>searchHit.has(n.id));
+      if(first) selectNode(first);
+    }
+  });
+  document.getElementById('resetBtn').onclick=()=>{
+    search.value='';searchHit=new Set();closeInfo();hoverOrgan=null;hoverNode=null;
+    activeCats=new Set(Object.keys(CATEGORIES)); activeCats.delete('organ');
+    [...legItems.children].forEach(x=>{ if(x.dataset.cat!=='organ') x.classList.remove('off'); });
+    targetDist = W<520 ? 1650 : (W<820 ? 1380 : 1150);
+    yaw=0.5;pitch=-0.25;
+  };
+
+  // ================= UI: ROTATION TOGGLE (desktop + mobile synced) =================
+  const rotBtn=document.getElementById('toggleRot');
+  const mRot=document.getElementById('mRot');
+  function setRot(v){
+    autoRotate=v;
+    rotBtn.textContent=autoRotate?'⏸︎ Въртене':'▶︎ Въртене';
+    mRot.textContent=autoRotate?'⏸︎':'▶︎';
+  }
+  rotBtn.onclick=()=>setRot(!autoRotate);
+  mRot.onclick=()=>setRot(!autoRotate);
+
+  // ================= UI: BODY TOGGLE (desktop + mobile synced) =================
+  const bodyBtn=document.getElementById('toggleBody');
+  const mBody=document.getElementById('mBody');
+  function setBody(v){
+    bodyMode=v;
+    bodyBtn.classList.toggle('off',!v);
+    mBody.style.opacity=v?'1':'.55';
+    if(organLegItem) organLegItem.classList.toggle('off',!v);
+    if(!v){ selOrgan=null; hoverOrgan=null; if(!selNode) info.classList.remove('show'); }
+  }
+  bodyBtn.onclick=()=>setBody(!bodyMode);
+  mBody.onclick=()=>setBody(!bodyMode);
+
+  // ================= UI: MOBILE LEGEND DRAWER =================
+  const legend=document.getElementById('legend');
+  const mLegend=document.getElementById('mLegend');
+  mLegend.onclick=()=>{
+    legend.classList.toggle('open');
+    mLegend.textContent=legend.classList.contains('open')?'✕':'☰';
+  };
+
+  // keyboard: Esc closes
+  window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeInfo();
+    legend.classList.remove('open');mLegend.textContent='☰';}});
+})();
+</script>
+</body>
+</html>
